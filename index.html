@@ -3,32 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Sacred Portrait</title>
+    <title>The Sacred Portrait - Ultimate Edition</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
-        canvas { display: block; }
-        
         /* ローディング画面 */
         #loading {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000;
+            background: #0a0a0a;
             display: flex; justify-content: center; align-items: center; flex-direction: column;
-            color: #a89f91; font-family: 'Georgia', serif; letter-spacing: 2px;
-            z-index: 999; transition: opacity 1.5s ease-out;
-            pointer-events: none;
+            color: #c5a059; font-family: 'Georgia', serif; letter-spacing: 3px;
+            z-index: 999; transition: opacity 2s ease-out;
         }
-        
         /* スクロール案内 */
         #scroll-hint {
-            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
-            color: rgba(255,255,255,0.6); font-family: 'Georgia', serif;
-            letter-spacing: 3px; font-size: 14px; pointer-events: none;
-            opacity: 0; transition: opacity 1s;
-            animation: blink 3s infinite;
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            color: rgba(197, 160, 89, 0.8); font-family: 'Georgia', serif;
+            letter-spacing: 4px; font-size: 14px; pointer-events: none;
+            opacity: 0; transition: opacity 2s;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+            animation: blink 4s infinite ease-in-out;
         }
-        @keyframes blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.8; } }
+        @keyframes blink { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+        /* エラー表示 */
+        #error-msg { color: #ff4444; font-size: 14px; margin-top: 20px; text-align: center; }
     </style>
-    
     <script type="importmap">
         {
             "imports": {
@@ -39,193 +37,216 @@
 </head>
 <body>
     <div id="loading">
-        <div>Loading Experience...</div>
-        <div id="error-msg" style="color:red; font-size:12px; margin-top:10px;"></div>
+        <div>ENTERING THE GALLERY...</div>
+        <div id="error-msg"></div>
     </div>
-
-    <div id="scroll-hint">SCROLL TO ASCEND</div>
+    <div id="scroll-hint">SCROLL TO APPROACH</div>
 
     <script type="module">
         import * as THREE from 'three';
 
-        // エラー表示用
+        // エラーハンドリング
         const errorMsg = document.getElementById('error-msg');
-        window.onerror = function(msg) { errorMsg.innerText = "Error: " + msg; };
+        function showError(msg) { errorMsg.innerHTML += `Error: ${msg}<br>`; }
+        window.onerror = (msg) => showError(msg);
 
         // --- 設定 ---
         const CONFIG = {
-            scrollSpeed: 0.0005,
-            inertia: 0.08,
-            maxScroll: 15,
-            fogColor: 0x1a1a1a,
-            goldColor: 0xffd700,
-            woodColor: 0x3d2314
+            scrollSpeed: 0.0008,
+            inertia: 0.05,          // 慣性（低いほど滑らか）
+            maxScrollDistance: 25,  // カメラが進む最大距離
+            fogColor: 0x050505,     // 霧の色（暗い色で重厚感を出す）
+            fogDensity: 0.025,      // 霧の濃さ
         };
 
         // --- シーン初期化 ---
         const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(CONFIG.fogColor, 0.03);
-        scene.background = new THREE.Color(0x050505);
+        scene.fog = new THREE.FogExp2(CONFIG.fogColor, CONFIG.fogDensity);
+        scene.background = new THREE.Color(CONFIG.fogColor);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // 初期カメラ位置（遠く、下から見上げる）
+        camera.position.set(0, -2, 30);
+        camera.lookAt(0, 2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        // 影の設定
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // 色調補正（映画のようなトーン）
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
         document.body.appendChild(renderer.domElement);
 
         // --- ライティング ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // 環境光（暗め）
         scene.add(ambientLight);
 
-        const spotLight = new THREE.SpotLight(0xffaa55, 200);
-        spotLight.position.set(5, 10, 10);
+        // 絵画を照らすメインのスポットライト
+        const spotLight = new THREE.SpotLight(0xffeebb, 50, 100, Math.PI / 6, 0.5, 2);
+        spotLight.position.set(0, 10, 15);
+        spotLight.target.position.set(0, 2, 0);
         spotLight.castShadow = true;
         scene.add(spotLight);
+        scene.add(spotLight.target);
 
-        // --- マテリアル ---
-        const goldMaterial = new THREE.MeshStandardMaterial({ color: CONFIG.goldColor, metalness: 1.0, roughness: 0.3 });
-        const woodMaterial = new THREE.MeshStandardMaterial({ color: CONFIG.woodColor, roughness: 0.9 });
+        // 逆光（輪郭を際立たせる）
+        const rimLight = new THREE.DirectionalLight(0xaaaaff, 1.5);
+        rimLight.position.set(0, 5, -10);
+        scene.add(rimLight);
 
-        // --- グループ作成 ---
-        const groupPortrait = new THREE.Group();
-        scene.add(groupPortrait);
-
-        const castleGroup = new THREE.Group();
-        scene.add(castleGroup);
-
-        // --- 画像読み込みと生成 ---
+        // --- テクスチャローダー ---
         const textureLoader = new THREE.TextureLoader();
-        textureLoader.load(
-            'image.png', 
-            (texture) => {
-                // 画像読み込み成功時の処理
-                console.log("Image loaded");
-                const aspect = texture.image.width / texture.image.height;
-                const height = 5;
-                const width = height * aspect;
+        const loadTexture = (path) => new Promise((resolve, reject) => {
+            textureLoader.load(path, resolve, undefined, () => reject(path));
+        });
 
-                // 絵画
-                const imgGeo = new THREE.PlaneGeometry(width, height);
-                const imgMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
-                const painting = new THREE.Mesh(imgGeo, imgMat);
-                painting.castShadow = true;
-                groupPortrait.add(painting);
+        // --- メイン処理 ---
+        Promise.all([
+            loadTexture('portrait.png'),   // 絵画
+            loadTexture('frame.png'),      // 額縁
+            loadTexture('bg_castle.png')   // 背景
+        ]).then(([portraitTex, frameTex, bgTex]) => {
+            initScene(portraitTex, frameTex, bgTex);
+        }).catch((errPath) => {
+            showError(`Failed to load: ${errPath}. Make sure the file exists.`);
+        });
 
-                // 額縁（金）
-                const innerFrame = new THREE.Mesh(new THREE.BoxGeometry(width + 0.2, height + 0.2, 0.2), goldMaterial);
-                innerFrame.position.z = -0.1;
-                innerFrame.castShadow = true;
-                groupPortrait.add(innerFrame);
+        function initScene(portraitTex, frameTex, bgTex) {
+            // 1. 背景の構築（油絵の世界）
+            // 巨大な球体に背景画像を貼り付ける
+            const bgGeometry = new THREE.SphereGeometry(500, 60, 40);
+            // 裏面を描画するように反転
+            bgGeometry.scale(-1, 1, 1); 
+            const bgMaterial = new THREE.MeshBasicMaterial({ map: bgTex });
+            const bgMesh = new THREE.Mesh(bgGeometry, bgMaterial);
+            // 少し回転させて良いアングルに調整
+            bgMesh.rotation.y = -Math.PI / 4;
+            scene.add(bgMesh);
 
-                // 額縁（木）
-                const outerFrame = new THREE.Mesh(new THREE.BoxGeometry(width + 0.8, height + 0.8, 0.4), woodMaterial);
-                outerFrame.position.z = -0.2;
-                outerFrame.castShadow = true;
-                groupPortrait.add(outerFrame);
 
-                // 初期位置設定
-                groupPortrait.position.y = -10; 
-                groupPortrait.rotation.x = 0.2;
+            // 2. 額縁と絵画の構築
+            const portraitGroup = new THREE.Group();
+            portraitGroup.position.set(0, 2, 0); // 空中に配置
 
-                // ★重要：読み込み完了アニメーション
-                const loadingScreen = document.getElementById('loading');
-                loadingScreen.style.opacity = 0;
-                document.getElementById('scroll-hint').style.opacity = 1;
-                setTimeout(() => { loadingScreen.style.display = 'none'; }, 1500);
-            },
-            undefined,
-            (err) => {
-                errorMsg.innerText = "Failed to load image.png. Please check file name.";
+            // 額縁の作成（提供された画像を使用）
+            const frameAspect = frameTex.image.width / frameTex.image.height;
+            const frameHeight = 12;
+            const frameWidth = frameHeight * frameAspect;
+            const frameGeo = new THREE.PlaneGeometry(frameWidth, frameHeight);
+            const frameMat = new THREE.MeshStandardMaterial({
+                map: frameTex,
+                roughness: 0.4, // 少し光沢を持たせる
+                metalness: 0.2
+            });
+            const frameMesh = new THREE.Mesh(frameGeo, frameMat);
+            frameMesh.castShadow = true;
+            portraitGroup.add(frameMesh);
+
+            // 絵画の作成（額縁の上に少し浮かせて配置）
+            const portraitAspect = portraitTex.image.width / portraitTex.image.height;
+            // 額縁の内側のマット（グレー部分）に収まるようにサイズ調整
+            // ※ここは目視で調整した値です。厳密には画像の透過処理が必要です。
+            const portraitHeight = frameHeight * 0.65; 
+            const portraitWidth = portraitHeight * portraitAspect;
+            const portraitGeo = new THREE.PlaneGeometry(portraitWidth, portraitHeight);
+            const portraitMat = new THREE.MeshStandardMaterial({
+                map: portraitTex,
+                roughness: 0.6,
+                emissive: 0xffeebb, // ほんのり自発光させて神々しく
+                emissiveIntensity: 0.1
+            });
+            const portraitMesh = new THREE.Mesh(portraitGeo, portraitMat);
+            portraitMesh.position.z = 0.1; // 額縁より少し手前に
+            portraitGroup.add(portraitMesh);
+
+            scene.add(portraitGroup);
+
+            // 3. 前景の構築（油彩風の草花レイヤー）
+            // ※手描きの質感を出すため、透過PNGのビルボードを多数配置する手法をとります
+            const grassGroup = new THREE.Group();
+            // 簡易的な草のテクスチャをプログラムで生成（本来は画像を用意すべき）
+            const grassCanvas = document.createElement('canvas');
+            grassCanvas.width = 64; grassCanvas.height = 128;
+            const ctx = grassCanvas.getContext('2d');
+            ctx.fillStyle = '#2a3a1a'; // 暗い緑
+            // 筆で描いたようなラフな草の形
+            for(let i=0; i<20; i++) {
+                ctx.beginPath();
+                ctx.moveTo(Math.random()*64, 128);
+                ctx.quadraticCurveTo(Math.random()*64, 64, Math.random()*64, 0);
+                ctx.lineTo(Math.random()*64, 128);
+                ctx.fill();
             }
-        );
+            const grassTex = new THREE.CanvasTexture(grassCanvas);
 
-        // --- 城の生成 ---
-        const castleMat = new THREE.MeshStandardMaterial({ color: 0x202020 });
-        const tower1 = new THREE.Mesh(new THREE.BoxGeometry(2, 8, 2), castleMat);
-        const tower2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 6, 1.5), castleMat);
-        tower2.position.set(3, -1, 0);
-        castleGroup.add(tower1, tower2);
-        castleGroup.position.set(5, -5, -20);
+            const grassMat = new THREE.MeshLambertMaterial({
+                map: grassTex,
+                transparent: true,
+                opacity: 0.9,
+                side: THREE.DoubleSide,
+                color: 0x88aa66 // 色味を調整
+            });
 
-        // --- 地面 ---
-        const ground = new THREE.Mesh(
-            new THREE.PlaneGeometry(100, 100, 32, 32),
-            new THREE.MeshStandardMaterial({ color: 0x112205, roughness: 0.8 })
-        );
-        ground.rotation.x = -Math.PI / 2;
-        ground.position.y = -8;
-        ground.receiveShadow = true;
-        scene.add(ground);
+            for (let i = 0; i < 150; i++) {
+                // サイズをランダムに
+                const h = 2 + Math.random() * 3;
+                const w = h * 0.5;
+                const grassGeo = new THREE.PlaneGeometry(w, h);
+                const grass = new THREE.Mesh(grassGeo, grassMat);
+                
+                // 配置（手前から奥へ、カメラの通り道に）
+                const x = (Math.random() - 0.5) * 30;
+                const z = 30 - Math.random() * 40; // カメラの手前から奥まで
+                const y = -3 + Math.random() * 0.5; // 地面の高さ
+                grass.position.set(x, y, z);
+                
+                // ランダムに傾ける
+                grass.rotation.x = -Math.random() * 0.2;
+                grass.rotation.y = Math.random() * Math.PI;
+                
+                // カメラに近いほど揺れを大きくする用
+                grass.userData.swaySpeed = 0.002 + Math.random() * 0.005;
+                grass.userData.swayOffset = Math.random() * Math.PI * 2;
+                
+                grassGroup.add(grass);
+            }
+            scene.add(grassGroup);
 
-        // --- パーティクル（綿毛） ---
-        const particlesGeo = new THREE.BufferGeometry();
-        const posArray = [];
-        const speedArray = [];
-        for(let i=0; i<300; i++) {
-            posArray.push((Math.random()-0.5)*30, (Math.random()-0.5)*40, (Math.random()-0.5)*20+5);
-            speedArray.push(Math.random()*0.02 + 0.005);
+
+            // --- ローディング完了処理 ---
+            document.getElementById('loading').style.opacity = 0;
+            setTimeout(() => {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('scroll-hint').style.opacity = 1;
+            }, 2000);
+
+            // --- アニメーション開始 ---
+            animate();
         }
-        particlesGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArray, 3));
-        const particleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.2, transparent: true, opacity: 0.6 });
-        const particles = new THREE.Points(particlesGeo, particleMat);
-        scene.add(particles);
 
         // --- スクロール制御 ---
         let scrollTarget = 0;
         let scrollCurrent = 0;
-
-        window.addEventListener('wheel', (e) => {
-            scrollTarget += e.deltaY * CONFIG.scrollSpeed;
+        const handleScroll = (delta) => {
+            scrollTarget += delta * CONFIG.scrollSpeed;
             scrollTarget = Math.max(0, Math.min(scrollTarget, 1));
-        });
-        
+        };
+        window.addEventListener('wheel', (e) => handleScroll(e.deltaY));
         let touchStartY = 0;
         window.addEventListener('touchstart', (e) => touchStartY = e.touches[0].clientY);
         window.addEventListener('touchmove', (e) => {
             const deltaY = touchStartY - e.touches[0].clientY;
-            scrollTarget += deltaY * CONFIG.scrollSpeed * 2;
-            scrollTarget = Math.max(0, Math.min(scrollTarget, 1));
+            handleScroll(deltaY * 2);
             touchStartY = e.touches[0].clientY;
         });
 
-        // --- アニメーション ---
+        // --- アニメーションループ ---
         function animate() {
             requestAnimationFrame(animate);
 
+            // 慣性スクロール
             scrollCurrent += (scrollTarget - scrollCurrent) * CONFIG.inertia;
-            const scrollY = scrollCurrent * CONFIG.maxScroll;
-
-            // カメラワーク
-            camera.position.y = -6 + (scrollY * 0.8);
-            camera.position.z = 8 - (scrollY * 0.2);
-            
-            // 絵画の動き
-            groupPortrait.position.y = -5 + scrollY;
-            groupPortrait.rotation.x = 0.3 - (scrollCurrent * 0.3);
-
-            // 背景とパーティクル
-            castleGroup.position.y = -5 + (scrollY * 0.5);
-            
-            const positions = particles.geometry.attributes.position.array;
-            for(let i=0; i<300; i++) {
-                positions[i*3+1] += speedArray[i] + (scrollCurrent * 0.1);
-                if(positions[i*3+1] > 15) positions[i*3+1] = -15;
-            }
-            particles.geometry.attributes.position.needsUpdate = true;
-
-            // 案内を消す
-            if (scrollCurrent > 0.1) document.getElementById('scroll-hint').style.opacity = 0;
-
-            renderer.render(scene, camera);
-        }
-        animate();
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    </script>
-</body>
-</html>
+            const scrollRa

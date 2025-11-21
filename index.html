@@ -3,17 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Sacred Portrait - Debug Mode</title>
+    <title>The Sacred Portrait</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000; }
         canvas { display: block; }
+        
+        /* ローディング画面 */
         #loading {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            text-align: center; width: 80%; line-height: 1.5;
-            background: rgba(0,0,0,0.8); padding: 20px; border: 1px solid #555; z-index: 1000;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+            color: #a89f91; font-family: 'Georgia', serif; letter-spacing: 2px;
+            z-index: 999; transition: opacity 1.5s ease-out;
+            pointer-events: none;
         }
-        #error-log { color: #ff5555; margin-top: 10px; font-size: 14px; word-break: break-all; }
+        
+        /* スクロール案内 */
+        #scroll-hint {
+            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+            color: rgba(255,255,255,0.6); font-family: 'Georgia', serif;
+            letter-spacing: 3px; font-size: 14px; pointer-events: none;
+            opacity: 0; transition: opacity 1s;
+            animation: blink 3s infinite;
+        }
+        @keyframes blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.8; } }
     </style>
+    
     <script type="importmap">
         {
             "imports": {
@@ -24,82 +39,193 @@
 </head>
 <body>
     <div id="loading">
-        Status: Initializing...<br>
-        <div id="error-log"></div>
+        <div>Loading Experience...</div>
+        <div id="error-msg" style="color:red; font-size:12px; margin-top:10px;"></div>
     </div>
+
+    <div id="scroll-hint">SCROLL TO ASCEND</div>
 
     <script type="module">
         import * as THREE from 'three';
 
-        const logBox = document.getElementById('loading');
-        const errBox = document.getElementById('error-log');
+        // エラー表示用
+        const errorMsg = document.getElementById('error-msg');
+        window.onerror = function(msg) { errorMsg.innerText = "Error: " + msg; };
 
-        // エラーを画面に出す関数
-        function showError(msg) {
-            errBox.innerHTML += `ERROR: ${msg}<br>`;
-            logBox.style.borderColor = 'red';
-        }
-
-        // グローバルエラー監視
-        window.onerror = function(message, source, lineno, colno, error) {
-            showError(`${message} (Line: ${lineno})`);
+        // --- 設定 ---
+        const CONFIG = {
+            scrollSpeed: 0.0005,
+            inertia: 0.08,
+            maxScroll: 15,
+            fogColor: 0x1a1a1a,
+            goldColor: 0xffd700,
+            woodColor: 0x3d2314
         };
 
-        try {
-            logBox.innerHTML = "Status: Three.js Loaded. Starting Scene...<br><div id='error-log'></div>";
-            
-            const scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x1a1a1a, 0.03);
-            
-            const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 0, 10);
+        // --- シーン初期化 ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(CONFIG.fogColor, 0.03);
+        scene.background = new THREE.Color(0x050505);
 
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
 
-            // ライト
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambientLight);
-            const dirLight = new THREE.DirectionalLight(0xffaa55, 2);
-            dirLight.position.set(5, 10, 10);
-            scene.add(dirLight);
+        // --- ライティング ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
 
-            // 画像読み込み
-            logBox.innerHTML += "Status: Loading image.png...<br>";
-            
-            const textureLoader = new THREE.TextureLoader();
-            textureLoader.load(
-                'image.png', // 読み込むファイル
-                (texture) => {
-                    // 成功時
-                    logBox.style.display = 'none'; // ローディング消去
-                    
-                    const aspect = texture.image.width / texture.image.height;
-                    const geometry = new THREE.PlaneGeometry(5 * aspect, 5);
-                    const material = new THREE.MeshStandardMaterial({ map: texture });
-                    const mesh = new THREE.Mesh(geometry, material);
-                    scene.add(mesh);
+        const spotLight = new THREE.SpotLight(0xffaa55, 200);
+        spotLight.position.set(5, 10, 10);
+        spotLight.castShadow = true;
+        scene.add(spotLight);
 
-                    // アニメーション
-                    function animate() {
-                        requestAnimationFrame(animate);
-                        mesh.rotation.y += 0.005;
-                        renderer.render(scene, camera);
-                    }
-                    animate();
-                },
-                undefined, // 進捗 (無視)
-                (err) => {
-                    // 画像読み込み失敗時
-                    console.error(err);
-                    showError("FAILED to load image.png.<br>Check file name or format.");
-                }
-            );
+        // --- マテリアル ---
+        const goldMaterial = new THREE.MeshStandardMaterial({ color: CONFIG.goldColor, metalness: 1.0, roughness: 0.3 });
+        const woodMaterial = new THREE.MeshStandardMaterial({ color: CONFIG.woodColor, roughness: 0.9 });
 
-        } catch (e) {
-            showError("Script Crash: " + e.message);
+        // --- グループ作成 ---
+        const groupPortrait = new THREE.Group();
+        scene.add(groupPortrait);
+
+        const castleGroup = new THREE.Group();
+        scene.add(castleGroup);
+
+        // --- 画像読み込みと生成 ---
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.load(
+            'image.png', 
+            (texture) => {
+                // 画像読み込み成功時の処理
+                console.log("Image loaded");
+                const aspect = texture.image.width / texture.image.height;
+                const height = 5;
+                const width = height * aspect;
+
+                // 絵画
+                const imgGeo = new THREE.PlaneGeometry(width, height);
+                const imgMat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 });
+                const painting = new THREE.Mesh(imgGeo, imgMat);
+                painting.castShadow = true;
+                groupPortrait.add(painting);
+
+                // 額縁（金）
+                const innerFrame = new THREE.Mesh(new THREE.BoxGeometry(width + 0.2, height + 0.2, 0.2), goldMaterial);
+                innerFrame.position.z = -0.1;
+                innerFrame.castShadow = true;
+                groupPortrait.add(innerFrame);
+
+                // 額縁（木）
+                const outerFrame = new THREE.Mesh(new THREE.BoxGeometry(width + 0.8, height + 0.8, 0.4), woodMaterial);
+                outerFrame.position.z = -0.2;
+                outerFrame.castShadow = true;
+                groupPortrait.add(outerFrame);
+
+                // 初期位置設定
+                groupPortrait.position.y = -10; 
+                groupPortrait.rotation.x = 0.2;
+
+                // ★重要：読み込み完了アニメーション
+                const loadingScreen = document.getElementById('loading');
+                loadingScreen.style.opacity = 0;
+                document.getElementById('scroll-hint').style.opacity = 1;
+                setTimeout(() => { loadingScreen.style.display = 'none'; }, 1500);
+            },
+            undefined,
+            (err) => {
+                errorMsg.innerText = "Failed to load image.png. Please check file name.";
+            }
+        );
+
+        // --- 城の生成 ---
+        const castleMat = new THREE.MeshStandardMaterial({ color: 0x202020 });
+        const tower1 = new THREE.Mesh(new THREE.BoxGeometry(2, 8, 2), castleMat);
+        const tower2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 6, 1.5), castleMat);
+        tower2.position.set(3, -1, 0);
+        castleGroup.add(tower1, tower2);
+        castleGroup.position.set(5, -5, -20);
+
+        // --- 地面 ---
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(100, 100, 32, 32),
+            new THREE.MeshStandardMaterial({ color: 0x112205, roughness: 0.8 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -8;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // --- パーティクル（綿毛） ---
+        const particlesGeo = new THREE.BufferGeometry();
+        const posArray = [];
+        const speedArray = [];
+        for(let i=0; i<300; i++) {
+            posArray.push((Math.random()-0.5)*30, (Math.random()-0.5)*40, (Math.random()-0.5)*20+5);
+            speedArray.push(Math.random()*0.02 + 0.005);
         }
+        particlesGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArray, 3));
+        const particleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.2, transparent: true, opacity: 0.6 });
+        const particles = new THREE.Points(particlesGeo, particleMat);
+        scene.add(particles);
+
+        // --- スクロール制御 ---
+        let scrollTarget = 0;
+        let scrollCurrent = 0;
+
+        window.addEventListener('wheel', (e) => {
+            scrollTarget += e.deltaY * CONFIG.scrollSpeed;
+            scrollTarget = Math.max(0, Math.min(scrollTarget, 1));
+        });
+        
+        let touchStartY = 0;
+        window.addEventListener('touchstart', (e) => touchStartY = e.touches[0].clientY);
+        window.addEventListener('touchmove', (e) => {
+            const deltaY = touchStartY - e.touches[0].clientY;
+            scrollTarget += deltaY * CONFIG.scrollSpeed * 2;
+            scrollTarget = Math.max(0, Math.min(scrollTarget, 1));
+            touchStartY = e.touches[0].clientY;
+        });
+
+        // --- アニメーション ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            scrollCurrent += (scrollTarget - scrollCurrent) * CONFIG.inertia;
+            const scrollY = scrollCurrent * CONFIG.maxScroll;
+
+            // カメラワーク
+            camera.position.y = -6 + (scrollY * 0.8);
+            camera.position.z = 8 - (scrollY * 0.2);
+            
+            // 絵画の動き
+            groupPortrait.position.y = -5 + scrollY;
+            groupPortrait.rotation.x = 0.3 - (scrollCurrent * 0.3);
+
+            // 背景とパーティクル
+            castleGroup.position.y = -5 + (scrollY * 0.5);
+            
+            const positions = particles.geometry.attributes.position.array;
+            for(let i=0; i<300; i++) {
+                positions[i*3+1] += speedArray[i] + (scrollCurrent * 0.1);
+                if(positions[i*3+1] > 15) positions[i*3+1] = -15;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+
+            // 案内を消す
+            if (scrollCurrent > 0.1) document.getElementById('scroll-hint').style.opacity = 0;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
